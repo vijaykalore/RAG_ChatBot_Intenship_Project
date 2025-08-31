@@ -1,0 +1,2 @@
+Deploying Apps
+Common platforms: Heroku, AWS, Azure. Docker helps reproducible deployments.

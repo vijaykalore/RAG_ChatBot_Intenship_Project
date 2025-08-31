@@ -1,0 +1,2 @@
+FAISS and Embeddings
+FAISS is a fast vector similarity library. Embeddings turn text into vectors.

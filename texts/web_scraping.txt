@@ -1,0 +1,2 @@
+Web Scraping
+Web scraping uses requests and BeautifulSoup. Respect robots.txt and rate limits.

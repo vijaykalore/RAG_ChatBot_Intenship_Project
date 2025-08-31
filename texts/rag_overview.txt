@@ -1,0 +1,2 @@
+RAG Overview
+Retrieval-Augmented Generation combines a retriever (vector DB) with a generator (LLM).
