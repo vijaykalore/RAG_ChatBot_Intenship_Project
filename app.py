@@ -2,40 +2,25 @@ import os
 import pickle
 import numpy as np
 from flask import Flask, request, jsonify, render_template_string
-from sentence_transformers import SentenceTransformer
 import pandas as pd
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_AVAILABLE = True
-except Exception:
-    SKLEARN_AVAILABLE = False
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 app = Flask(__name__)
 
-# Load resources
-MODEL_NAME = "all-MiniLM-L6-v2"
-model = None
-
-def get_model():
-    global model
-    if model is None:
-        from sentence_transformers import SentenceTransformer as _STS
-        model = _STS(MODEL_NAME)
-    return model
-
-# Load FAISS + metadata
-embeddings = np.load(os.path.join("vector_store", "embeddings.npy"))
+# Load corpus passages (built by build_index.py -> metadata.pkl)
 with open(os.path.join("vector_store", "metadata.pkl"), "rb") as f:
     meta = pickle.load(f)
-texts = meta["texts"]
+texts = meta.get("texts", [])
 
-# Load QA Excel and prepare TF-IDF (if available)
+# TF-IDF over corpus texts for retrieval
+corpus_vectorizer = TfidfVectorizer().fit(texts) if texts else None
+corpus_tfidf = corpus_vectorizer.transform(texts) if texts else None
+
+# Load QA Excel and prepare TF-IDF
 qa_df = pd.read_excel(os.path.join("data", "qa_sheet.xlsx"))
-if SKLEARN_AVAILABLE:
-    tfidf = TfidfVectorizer().fit(qa_df["question"].tolist())
-else:
-    tfidf = None
+qa_vectorizer = TfidfVectorizer().fit(qa_df["question"].tolist())
+qa_q_mat = qa_vectorizer.transform(qa_df["question"].tolist())
 
 HTML_UI = """
 <!doctype html>
@@ -49,26 +34,18 @@ HTML_UI = """
 """
 
 def search_excel(query, top_k=1):
-    if tfidf is None:
-        # fallback: simple substring match
-        for i, q in qa_df["question"].iteritems():
-            if query.lower() in str(q).lower() or str(q).lower() in query.lower():
-                return {"index": int(i), "score": 1.0, "answer": qa_df.iloc[int(i)]["answer"], "question": qa_df.iloc[int(i)]["question"]}
-        return {"index": -1, "score": 0.0, "answer": "", "question": ""}
-    q_vec = tfidf.transform([query])
-    q_mat = tfidf.transform(qa_df["question"].tolist())
-    sims = cosine_similarity(q_vec, q_mat)[0]
+    q_vec = qa_vectorizer.transform([query])
+    sims = cosine_similarity(q_vec, qa_q_mat)[0]
     idx = int(np.argmax(sims))
     score = float(sims[idx])
     return {"index": idx, "score": score, "answer": qa_df.iloc[idx]["answer"], "question": qa_df.iloc[idx]["question"]}
 
-def retrieve_vectors(query, top_k=3):
-    _model = get_model()
-    emb = _model.encode([query], convert_to_numpy=True)
-    emb_norm = emb / (np.linalg.norm(emb, axis=1, keepdims=True) + 1e-12)
-    # cosine similarity via dot product (embeddings already normalized)
-    sims = (emb_norm @ embeddings.T)[0]
-    idxs = np.argsort(-sims)[:top_k]
+def retrieve_corpus(query, top_k=3):
+    if corpus_vectorizer is None:
+        return []
+    q_vec = corpus_vectorizer.transform([query])
+    sims = cosine_similarity(q_vec, corpus_tfidf)[0]
+    idxs = np.argsort(sims)[::-1][:top_k]
     results = []
     for i in idxs:
         results.append({"score": float(sims[i]), "text": texts[int(i)]})
@@ -80,7 +57,7 @@ def home():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    q = request.form.get("q") or request.json.get("q")
+    q = request.form.get("q") or (request.json and request.json.get("q"))
     if not q:
         return jsonify({"error": "No question provided"}), 400
 
@@ -95,7 +72,7 @@ def chat():
         })
 
     # 2) Fallback to vector retrieval
-    vecs = retrieve_vectors(q, top_k=3)
+    vecs = retrieve_corpus(q, top_k=3)
     if not vecs:
         return jsonify({"source": "none", "answer": "No relevant content found."})
 

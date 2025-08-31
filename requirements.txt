@@ -1,8 +1,11 @@
+
 beautifulsoup4==4.12.2
 requests==2.31.0
 fpdf==1.7.2
 pandas==2.2.3
 openpyxl==3.1.2
-numpy==1.27.6
-sentence-transformers==2.2.2
+numpy==2.3.2
+scikit-learn==1.7.1
+flask==3.1.2
+gunicorn==21.2.0
 
