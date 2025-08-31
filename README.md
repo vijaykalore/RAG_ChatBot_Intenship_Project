@@ -1,5 +1,5 @@
 # Zep Analytics — Demo RAG Chatbot Pipeline
-
+![Alt text](images/)
 This repository contains a small end-to-end demo pipeline that:
 - Generates a local 8-page HTML site
 - Scrapes the pages to plain text
